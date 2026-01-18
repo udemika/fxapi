@@ -8,7 +8,8 @@
 
  + SKAZ балансеры (online3/online4) по title:
    /lite/<balancer>?title=...&account_email=...&uid=guest&lampac_unic_id=...
-   (запросы на /lite/events и /lite/withsearch блокируются)
+
+ Debug: подробные логи запросов в консоль.
 */
 
 var Defined = {
@@ -40,6 +41,20 @@ function component(object) {
 
     var last;
     var history = [];
+
+    function log() {
+        try {
+            console.log.apply(console, ['[SHARA]'].concat([].slice.call(arguments)));
+        }
+        catch (e) {}
+    }
+
+    function err() {
+        try {
+            console.error.apply(console, ['[SHARA]'].concat([].slice.call(arguments)));
+        }
+        catch (e) {}
+    }
 
     function getSkazUnicId() {
         var unic = Lampa.Storage.get(Skaz.unic_id_key);
@@ -83,7 +98,7 @@ function component(object) {
         if (!url) return url;
         if (!isSkazUrl(url)) return url;
 
-        // вычищаем прежние account_email/uid/lampac_unic_id (и любые uid из сервера)
+        // вычищаем прежние account_email/uid/lampac_unic_id
         url = url
             .replace(/([?&])(uid|account_email|lampac_unic_id)=[^&]*/g, '$1')
             .replace(/\?&/g, '?')
@@ -135,15 +150,21 @@ function component(object) {
             var json = el.attr('data-json');
             if (!json) return;
 
-            var data = JSON.parse(json);
+            var data;
 
-            // нормализация url + принудительная auth для skaz
+            try {
+                data = JSON.parse(json);
+            }
+            catch (e) {
+                err('JSON.parse error', e, 'json preview:', (json || '').slice(0, 200));
+                return;
+            }
+
             if (data.url) {
                 data.url = normalizeUrl(data.url, base_url);
                 data.url = applySkazAuth(data.url);
             }
 
-            // иногда ссылки могут быть в quality
             if (data.quality && typeof data.quality === 'object') {
                 Object.keys(data.quality).forEach(function (q) {
                     if (typeof data.quality[q] === 'string') {
@@ -174,6 +195,8 @@ function component(object) {
     }
 
     function play(item) {
+        log('Play', item.title, item.url);
+
         Lampa.Player.play({
             title: item.title,
             url: item.url,
@@ -212,8 +235,8 @@ function component(object) {
             html.on('hover:enter', function () {
                 if (!item.url) return;
 
-                // блокируем нежелательные эндпоинты
                 if (isForbidden(item.url)) {
+                    err('Blocked url', item.url);
                     empty();
                     return;
                 }
@@ -241,18 +264,31 @@ function component(object) {
         if (!url) return;
 
         url = applySkazAuth(url);
-        if (isForbidden(url)) return empty();
+
+        if (isForbidden(url)) {
+            err('Blocked requestUrl', url);
+            return empty();
+        }
+
+        log('GET', url);
 
         network.native(
             url,
             function (str) {
+                log('OK', url, 'len:', (str || '').length, 'preview:', (str || '').slice(0, 140));
+
                 if (push_history) history.push(url);
 
                 var videos = parseHtml(str, url);
+                log('Parsed items:', videos.length, 'from', url);
+
                 if (videos.length) render(videos);
                 else empty();
             },
-            empty,
+            function (e) {
+                err('ERROR', url, e);
+                empty();
+            },
             false,
             { dataType: 'text' }
         );
@@ -262,6 +298,10 @@ function component(object) {
         history = [];
 
         var urls = buildUrls();
+        log('Movie:', object && object.movie ? { title: object.movie.title, kinopoisk_id: object.movie.kinopoisk_id } : object);
+        log('Queue size:', urls.length);
+        try { log('Queue:', urls); } catch (e) {}
+
         if (!urls.length) return empty();
 
         var i = 0;
@@ -270,17 +310,26 @@ function component(object) {
             var url = urls[i++];
             if (!url) return empty();
 
-            // на всякий случай: блокируем /events и /withsearch
-            if (isForbidden(url)) return next();
+            if (isForbidden(url)) {
+                err('Blocked start url', url);
+                return next();
+            }
+
+            log('TRY', url);
 
             network.native(
                 url,
                 function (str) {
+                    log('OK', url, 'len:', (str || '').length, 'preview:', (str || '').slice(0, 140));
+
                     var videos = parseHtml(str, url);
+                    log('Parsed items:', videos.length, 'from', url);
+
                     if (videos.length) render(videos);
                     else next();
                 },
-                function () {
+                function (e) {
+                    err('ERROR', url, e);
                     next();
                 },
                 false,
@@ -307,7 +356,6 @@ function component(object) {
             back: function () {
                 if (history.length) {
                     var prev = history.pop();
-                    // вернуться на предыдущую страницу, не добавляя в историю
                     requestUrl(prev, false);
                     return;
                 }
@@ -336,7 +384,7 @@ function startPlugin() {
     Lampa.Manifest.plugins = {
         type: 'video',
         name: 'SHARA',
-        description: 'SHARA FXAPI FULL',
+        description: 'SHARA FXAPI FULL (debug)',
         component: 'SHARA',
         onContextMenu: function () {
             return {
