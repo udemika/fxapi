@@ -2,9 +2,10 @@
     'use strict';
 
     /*
-     FULL SHARA FXAPI
+     FULL SHARA FXAPI (UPDATED)
      Сервер видео: online3.skaz.tv
-     kinopoisk_id берётся из Lampa
+     Балансер: filmix
+     Авторизация: aklama@mail.ru / guest
     */
 
     var Defined = {
@@ -24,14 +25,23 @@
         var last;
 
         function buildUrl() {
-            if (!object.movie || !object.movie.kinopoisk_id) return null;
+            var params = '?rjson=False' +
+                '&s=1' +
+                '&uid=' + Defined.uid +
+                '&account_email=' + Defined.account_email;
 
-            return Defined.video_host + 'lite/filmix'
-                + '?rjson=False'
-                + '&kinopoisk_id=' + object.movie.kinopoisk_id
-                + '&s=1'
-                + '&uid=' + Defined.uid
-                + '&account_email=' + Defined.account_email;
+            // Если есть ID Кинопоиска - ищем по нему
+            if (object.movie.kinopoisk_id) {
+                return Defined.video_host + 'lite/filmix' + params + '&kinopoisk_id=' + object.movie.kinopoisk_id;
+            }
+            // Если нет ID, но есть название (как в вашем примере с Лакомым кусочком) - ищем по названию
+            else if (object.movie.title) {
+                var title = encodeURIComponent(object.movie.title);
+                var original_title = object.movie.original_title ? encodeURIComponent(object.movie.original_title) : '';
+                return Defined.video_host + 'lite/filmix' + params + '&title=' + title + '&original_title=' + original_title;
+            }
+
+            return null;
         }
 
         function parseHtml(str) {
@@ -77,7 +87,8 @@
         }
 
         function saveWatched(item) {
-            var key = Lampa.Utils.hash(object.movie.kinopoisk_id);
+            var id = object.movie.kinopoisk_id || object.movie.title; // Используем title как ID если нет KP
+            var key = Lampa.Utils.hash(id);
             var watched = Lampa.Storage.get('shara_watched', {});
 
             watched[key] = {
@@ -117,7 +128,10 @@
 
         function request() {
             var url = buildUrl();
-            if (!url) return;
+            if (!url) {
+                empty(); // Если URL не удалось собрать
+                return;
+            }
 
             network.native(
                 url,
@@ -170,7 +184,7 @@
         Lampa.Manifest.plugins = {
             type: 'video',
             name: 'SHARA',
-            description: 'SHARA FXAPI FULL',
+            description: 'SHARA FXAPI FULL (Updated)',
             component: 'SHARA',
             onContextMenu: function () {
                 return {
