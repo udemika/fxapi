@@ -1,26 +1,27 @@
 (function () {
 'use strict';
 
-if (window.shara_balancer_loaded) {
-    console.log('[SHARA] already loaded');
-    return;
-}
-window.shara_balancer_loaded = true;
+// --- НАСТРОЙКИ ---
+var SETTINGS = {
+    component: 'SHARA_FX_FULL', // Уникальный ID компонента
+    name: 'SHARA',              // Текст на кнопке
+    icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="currentColor"><path d="M448 256c0-106-86-192-192-192S64 150 64 256s86 192 192 192 192-86 192-192z" opacity=".2"/><path d="M216.3 363.5l125.8-90.4c9.1-6.5 9.1-20.6 0-27.1L216.3 155.6c-10-7.2-24.3 0-24.3 12.3v183.3c0 12.3 14.3 19.5 24.3 12.3z"/></svg>'
+};
 
-console.log('[SHARA] init balancer');
+if (window.shara_force_loaded) return;
+window.shara_force_loaded = true;
 
+console.log('[SHARA] Force Button Plugin Init');
+
+// --- ЛОГИКА FXAPI + ONLINE3/4 ---
 var Defined = {
-    name: 'SHARA',
     video_host: 'http://146.103.111.209/',
     uid: 'p8nqb9ii',
     showy_token: 'ik377033-90eb-4d76-93c9-7605952a096l'
 };
 
 var Skaz = {
-    hosts: [
-        'http://online3.skaz.tv/lite/',
-        'http://online4.skaz.tv/lite/'
-    ],
+    hosts: ['http://online3.skaz.tv/lite/', 'http://online4.skaz.tv/lite/'],
     balancers: ['videocdn', 'filmix', 'kinopub', 'alloha', 'rhsprem', 'rezka'],
     account_email: 'aklama%40mail.ru',
     uid: 'guest',
@@ -33,48 +34,27 @@ function component(object) {
     var files = new Lampa.Explorer(object);
     var last, history = [];
 
-    function log() {
-        try { console.log.apply(console, ['[SHARA]'].concat([].slice.call(arguments))); } catch (e) {}
-    }
-
-    function err() {
-        try { console.error.apply(console, ['[SHARA]'].concat([].slice.call(arguments))); } catch (e) {}
-    }
-
+    // ... (стандартные функции: log, err, getSkazUnicId, normalizeUrl, applySkazAuth) ...
+    function log() { try { console.log.apply(console, ['[SHARA]'].concat([].slice.call(arguments))); } catch (e) {} }
+    function err() { try { console.error.apply(console, ['[SHARA]'].concat([].slice.call(arguments))); } catch (e) {} }
     function getSkazUnicId() {
-        var unic = Lampa.Storage.get(Skaz.unic_id_key);
-        if (!unic) {
-            unic = Math.random().toString(36).slice(2, 10);
-            Lampa.Storage.set(Skaz.unic_id_key, unic);
-        }
-        return unic;
+        var u = Lampa.Storage.get(Skaz.unic_id_key);
+        if(!u) { u = Math.random().toString(36).slice(2,10); Lampa.Storage.set(Skaz.unic_id_key, u); }
+        return u;
     }
-
-    function isForbidden(url) {
-        return !!(url && (url.indexOf('/lite/events') !== -1 || url.indexOf('/lite/withsearch') !== -1));
+    function isForbidden(u) { return !!(u && (u.indexOf('/lite/events')!==-1 || u.indexOf('/lite/withsearch')!==-1)); }
+    function isSkazUrl(u) { return !!(u && (u.indexOf('online3.skaz.tv')!==-1 || u.indexOf('online4.skaz.tv')!==-1)); }
+    function normalizeUrl(u, b) {
+        if(!u) return u; if(/^https?:\/\//i.test(u)) return u;
+        var a = document.createElement('a'); a.href = b||''; 
+        if(u.indexOf('//')===0) return a.protocol + u;
+        if(u[0]==='/') return a.protocol+'//'+a.host+u;
+        return a.protocol+'//'+a.host+'/'+u;
     }
-
-    function isSkazUrl(url) {
-        return !!(url && (url.indexOf('online3.skaz.tv') !== -1 || url.indexOf('online4.skaz.tv') !== -1));
-    }
-
-    function normalizeUrl(url, base_url) {
-        if (!url) return url;
-        if (/^https?:\/\//i.test(url)) return url;
-        var a = document.createElement('a');
-        a.href = base_url || '';
-        var origin = a.protocol + '//' + a.host;
-        if (url.indexOf('//') === 0) return a.protocol + url;
-        if (url[0] === '/') return origin + url;
-        return origin + '/' + url;
-    }
-
-    function applySkazAuth(url) {
-        if (!url || !isSkazUrl(url)) return url;
-        url = url.replace(/([?&])(uid|account_email|lampac_unic_id)=[^&]*/g, '$1')
-            .replace(/\?&/g, '?').replace(/&&/g, '&').replace(/[?&]$/g, '');
-        var sep = url.indexOf('?') === -1 ? '?' : '&';
-        return url + sep + 'account_email=' + Skaz.account_email + '&uid=' + Skaz.uid + '&lampac_unic_id=' + getSkazUnicId();
+    function applySkazAuth(u) {
+        if(!u || !isSkazUrl(u)) return u;
+        u = u.replace(/([?&])(uid|account_email|lampac_unic_id)=[^&]*/g, '$1').replace(/\?&/g,'?').replace(/&&/g,'&').replace(/[?&]$/g,'');
+        return u + (u.indexOf('?')===-1?'?':'&') + 'account_email='+Skaz.account_email+'&uid='+Skaz.uid+'&lampac_unic_id='+getSkazUnicId();
     }
 
     function buildUrls() {
@@ -83,160 +63,125 @@ function component(object) {
             urls.push(Defined.video_host + 'lite/fxapi?rjson=False&kinopoisk_id=' + object.movie.kinopoisk_id + '&s=1&uid=' + Defined.uid + '&showy_token=' + Defined.showy_token);
         }
         if (object.movie && object.movie.title) {
-            var title = encodeURIComponent(object.movie.title);
-            Skaz.hosts.forEach(function (host) {
-                Skaz.balancers.forEach(function (b) {
-                    urls.push(applySkazAuth(host + b + '?title=' + title));
-                });
-            });
+            var t = encodeURIComponent(object.movie.title);
+            Skaz.hosts.forEach(function (h) { Skaz.balancers.forEach(function (b) { urls.push(applySkazAuth(h + b + '?title=' + t)); }); });
         }
         return urls;
     }
 
-    function parseHtml(str, base_url) {
+    function parseHtml(str, base) {
         var html = $('<div>' + str + '</div>'), items = [];
         html.find('.videos__item').each(function () {
             var el = $(this), json = el.attr('data-json');
             if (!json) return;
-            var data;
-            try { data = JSON.parse(json); }
-            catch (e) { err('JSON.parse error', e); return; }
-            if (data.url) {
-                data.url = normalizeUrl(data.url, base_url);
-                data.url = applySkazAuth(data.url);
-            }
-            if (data.quality && typeof data.quality === 'object') {
-                Object.keys(data.quality).forEach(function (q) {
-                    if (typeof data.quality[q] === 'string') {
-                        data.quality[q] = applySkazAuth(normalizeUrl(data.quality[q], base_url));
-                    }
-                });
-            }
-            data.title = el.find('.videos__item-title').text() || data.translate || data.title || 'Видео';
-            data.voice_name = data.translate || data.voice_name || data.title;
-            if (!data.method) data.method = 'play';
-            if (data.quality) {
-                data.qualitys = data.quality;
-                data.quality = Object.keys(data.quality)[0];
-            }
-            items.push(data);
+            var d; try { d = JSON.parse(json); } catch (e) { return; }
+            if (d.url) d.url = applySkazAuth(normalizeUrl(d.url, base));
+            if (d.quality) { Object.keys(d.quality).forEach(function(k){ if(typeof d.quality[k]=='string') d.quality[k]=applySkazAuth(normalizeUrl(d.quality[k], base)); }); }
+            d.title = el.find('.videos__item-title').text() || d.title || 'Video';
+            if(!d.method) d.method = 'play';
+            if (d.quality) { d.qualitys = d.quality; d.quality = Object.keys(d.quality)[0]; }
+            items.push(d);
         });
         return items;
-    }
-
-    function play(item) {
-        log('Play', item.title);
-        Lampa.Player.play({ title: item.title, url: item.url, quality: item.qualitys, voice_name: item.voice_name, isonline: true });
     }
 
     function render(videos) {
         scroll.clear();
         videos.forEach(function (item) {
-            var html = Lampa.Template.get('lampac_prestige_full', {
-                title: item.title, time: '', info: item.voice_name || '', quality: item.quality || ''
-            });
-            html.on('hover:enter', function () {
-                if (!item.url) return;
-                if (isForbidden(item.url)) { err('Blocked', item.url); empty(); return; }
+            var h = Lampa.Template.get('lampac_prestige_full', { title: item.title, time: '', info: item.voice_name || '', quality: item.quality || '' });
+            h.on('hover:enter', function () {
                 if (item.method === 'link') requestUrl(item.url, true);
-                else play(item);
+                else Lampa.Player.play({ title: item.title, url: item.url, quality: item.qualitys, voice_name: item.voice_name, isonline: true });
             });
-            html.on('hover:focus', function (e) { last = e.target; scroll.update($(e.target), true); });
-            scroll.append(html);
+            scroll.append(h);
         });
         Lampa.Controller.enable('content');
     }
 
-    function requestUrl(url, push_history) {
-        if (!url) return;
-        url = applySkazAuth(url);
-        if (isForbidden(url)) { err('Blocked', url); return empty(); }
-        log('GET', url);
-        network.native(url,
-            function (str) {
-                log('OK', 'len:', (str || '').length);
-                if (push_history) history.push(url);
-                var videos = parseHtml(str, url);
-                log('Parsed:', videos.length);
-                if (videos.length) render(videos); else empty();
-            },
-            function (e) { err('ERROR', url, e); empty(); },
-            false, { dataType: 'text' }
-        );
+    function requestUrl(u, h) {
+        u = applySkazAuth(u);
+        network.native(u, function(s){
+            var v = parseHtml(s, u);
+            if(v.length) { if(h) history.push(u); render(v); } else empty();
+        }, empty, false, {dataType:'text'});
     }
 
     function request() {
-        history = [];
-        var urls = buildUrls();
-        log('Movie:', object.movie ? object.movie.title : '?');
-        log('Queue:', urls.length);
-        if (!urls.length) return empty();
-        var i = 0;
+        var urls = buildUrls(), i=0;
         function next() {
-            var url = urls[i++];
-            if (!url) return empty();
-            if (isForbidden(url)) { err('Blocked', url); return next(); }
-            log('TRY', url);
-            network.native(url,
-                function (str) {
-                    log('OK', 'len:', (str || '').length);
-                    var videos = parseHtml(str, url);
-                    log('Parsed:', videos.length);
-                    if (videos.length) render(videos); else next();
-                },
-                function (e) { err('ERROR', url, e); next(); },
-                false, { dataType: 'text' }
-            );
+            var u = urls[i++];
+            if(!u) return empty();
+            network.native(u, function(s){
+                var v = parseHtml(s, u);
+                if(v.length) render(v); else next();
+            }, next, false, {dataType:'text'});
         }
-        next();
+        if(urls.length) next(); else empty();
     }
 
-    function empty() {
-        scroll.clear();
-        scroll.append(Lampa.Template.get('lampac_does_not_answer', {}));
-    }
+    function empty() { scroll.clear(); scroll.append(Lampa.Template.get('lampac_does_not_answer', {})); }
 
     this.start = function () {
         request();
         Lampa.Controller.add('content', {
-            toggle: function () {
-                Lampa.Controller.collectionSet(scroll.render(), files.render());
-                Lampa.Controller.collectionFocus(last || false, scroll.render());
-            },
-            back: function () {
-                if (history.length) { requestUrl(history.pop(), false); return; }
-                Lampa.Activity.backward();
-            }
+            toggle: function () { Lampa.Controller.collectionSet(scroll.render(), files.render()); Lampa.Controller.collectionFocus(last || false, scroll.render()); },
+            back: function () { if(history.length) requestUrl(history.pop(), false); else Lampa.Activity.backward(); }
         });
         Lampa.Controller.toggle('content');
     };
-
     this.render = function () { return files.render(); };
     this.destroy = function () { network.clear(); scroll.destroy(); files.destroy(); };
 }
 
+// --- ПРИНУДИТЕЛЬНАЯ ВСТАВКА КНОПКИ ---
+function addForceButton() {
+    Lampa.Listener.follow('full', function (e) {
+        if (e.type === 'complite') {
+            // Ищем ряд кнопок в карточке фильма
+            var buttons = e.object.activity.render().find('.view--torrent');
+            
+            // Если не нашли "view--torrent" (иногда бывает view--online), ищем просто список кнопок
+            if (buttons.length === 0) buttons = e.object.activity.render().find('.button--play').parent();
+            
+            if (buttons.length) {
+                var btn = Lampa.Template.get('button', {
+                    title: SETTINGS.name,
+                    icon: SETTINGS.icon
+                });
+                
+                btn.on('hover:enter', function () {
+                    Lampa.Activity.push({
+                        url: '',
+                        title: SETTINGS.name,
+                        component: SETTINGS.component,
+                        movie: e.object.card
+                    });
+                });
+                
+                // Вставляем кнопку после "Смотреть" или "Торренты"
+                buttons.append(btn);
+                console.log('[SHARA] Button injected into card!');
+            }
+        }
+    });
+}
+
 function startPlugin() {
-    // Регистрация компонента
-    Lampa.Component.add('online_shara', component);
+    // 1. Регистрируем компонент
+    Lampa.Component.add(SETTINGS.component, component);
 
-    // Регистрация онлайн-балансера для шторки
-    var balancer = {
-        name: 'shara',
-        title: 'SHARA',
-        component: 'online_shara'
-    };
+    // 2. Добавляем в список плагинов (на всякий случай, для контекстного меню)
+    if (!Lampa.Manifest.plugins) Lampa.Manifest.plugins = [];
+    Lampa.Manifest.plugins.push({
+        type: 'video',
+        name: SETTINGS.name,
+        component: SETTINGS.component,
+        onContextMenu: function () { return { name: 'Смотреть '+SETTINGS.name, description: 'FXAPI' }; },
+        onContextLauch: function (object) { Lampa.Activity.push({ title: SETTINGS.name, component: SETTINGS.component, movie: object }); }
+    });
 
-    // Добавляем в список онлайн-балансеров
-    if (Lampa.Storage) {
-        Lampa.Storage.set('online_choice_shara', '{}');
-    }
-
-    // Регистрация через Embed если есть
-    if (Lampa.Platform && Lampa.Platform.tv()) {
-        Lampa.Embed && Lampa.Embed.add(balancer);
-    }
-
-    console.log('[SHARA] registered as online balancer');
+    // 3. Активируем принудительную кнопку
+    addForceButton();
 }
 
 if (window.appready) startPlugin();
