@@ -12,13 +12,12 @@
  Debug: подробные логи запросов в консоль.
 */
 
-if (window.shara_fxapi_debug_plugin) return;
-window.shara_fxapi_debug_plugin = true;
-
-try { console.log('[SHARA] script loaded (card button fix)'); } catch(e){}
+try { console.log('[SHARA] script loaded (debug)'); } catch(e){}
 
 var Defined = {
     name: 'SHARA',
+
+    // FXAPI сервер
     video_host: 'http://146.103.111.209/',
     uid: 'p8nqb9ii',
     showy_token: 'ik377033-90eb-4d76-93c9-7605952a096l'
@@ -62,6 +61,13 @@ function component(object) {
         return unic;
     }
 
+    function isForbidden(url) {
+        return !!(url && (
+            url.indexOf('/lite/events') !== -1 ||
+            url.indexOf('/lite/withsearch') !== -1
+        ));
+    }
+
     function isSkazUrl(url) {
         return !!(url && (
             url.indexOf('online3.skaz.tv') !== -1 ||
@@ -83,10 +89,12 @@ function component(object) {
         return origin + '/' + url;
     }
 
+    // Любой запрос к online3/online4 принудительно с account_email + uid=guest + lampac_unic_id
     function applySkazAuth(url) {
         if (!url) return url;
         if (!isSkazUrl(url)) return url;
 
+        // вычищаем прежние account_email/uid/lampac_unic_id
         url = url
             .replace(/([?&])(uid|account_email|lampac_unic_id)=[^&]*/g, '$1')
             .replace(/\?&/g, '?')
@@ -139,7 +147,10 @@ function component(object) {
             if (!json) return;
 
             var data;
-            try { data = JSON.parse(json); }
+
+            try {
+                data = JSON.parse(json);
+            }
             catch (e) {
                 err('JSON.parse error', e, 'json preview:', (json || '').slice(0, 200));
                 return;
@@ -205,8 +216,18 @@ function component(object) {
             html.on('hover:enter', function () {
                 if (!item.url) return;
 
-                if (item.method === 'link') requestUrl(item.url, true);
-                else play(item);
+                if (isForbidden(item.url)) {
+                    err('Blocked url', item.url);
+                    empty();
+                    return;
+                }
+
+                if (item.method === 'link') {
+                    requestUrl(item.url, true);
+                }
+                else {
+                    play(item);
+                }
             });
 
             html.on('hover:focus', function (e) {
@@ -224,12 +245,19 @@ function component(object) {
         if (!url) return;
 
         url = applySkazAuth(url);
+
+        if (isForbidden(url)) {
+            err('Blocked requestUrl', url);
+            return empty();
+        }
+
         log('GET', url);
 
         network.native(
             url,
             function (str) {
                 log('OK', url, 'len:', (str || '').length, 'preview:', (str || '').slice(0, 160));
+
                 if (push_history) history.push(url);
 
                 var videos = parseHtml(str, url);
@@ -262,6 +290,11 @@ function component(object) {
         function next() {
             var url = urls[i++];
             if (!url) return empty();
+
+            if (isForbidden(url)) {
+                err('Blocked start url', url);
+                return next();
+            }
 
             log('TRY', url);
 
@@ -307,6 +340,7 @@ function component(object) {
                     requestUrl(prev, false);
                     return;
                 }
+
                 Lampa.Activity.backward();
             }
         });
@@ -325,31 +359,12 @@ function component(object) {
     };
 }
 
-function addToManifest(plugin) {
-    // Не перезатираем Lampa.Manifest.plugins (из-за этого кнопка может не появляться). [file:1]
-    if (!Lampa.Manifest) Lampa.Manifest = {};
-
-    // В разных сборках бывает по-разному: массив или объект-реестр.
-    if (!Lampa.Manifest.plugins) Lampa.Manifest.plugins = [];
-
-    if (Array.isArray(Lampa.Manifest.plugins)) {
-        var exists = Lampa.Manifest.plugins.some(function (p) { return p && p.name === plugin.name; });
-        if (!exists) Lampa.Manifest.plugins.push(plugin);
-    }
-    else if (typeof Lampa.Manifest.plugins === 'object') {
-        Lampa.Manifest.plugins[plugin.name] = plugin;
-    }
-}
-
 function startPlugin() {
-    try { console.log('[SHARA] register plugin'); } catch(e){}
-
+    // КНОПКА / включение плагина — ровно как в исходном fxapi.js
     Lampa.Component.add('SHARA', component);
 
-    addToManifest({
-        // Если в шторке рядом с торрентами показываются именно онлайн-источники,
-        // обычно лучше ставить тип "online", а не перезатирать системные списки.
-        type: 'online',
+    Lampa.Manifest.plugins = {
+        type: 'video',
         name: 'SHARA',
         description: 'SHARA FXAPI FULL (debug)',
         component: 'SHARA',
@@ -366,15 +381,11 @@ function startPlugin() {
                 movie: object
             });
         }
-    });
+    };
+
+    try { console.log('[SHARA] plugin registered into Manifest.plugins (object assign)'); } catch(e){}
 }
 
-// Запуск после готовности приложения (иначе кнопка может не успеть зарегистрироваться). [web:58]
-if (window.appready) startPlugin();
-else {
-    Lampa.Listener.follow('app', function (e) {
-        if (e.type === 'ready') startPlugin();
-    });
-}
+startPlugin();
 
 })();
