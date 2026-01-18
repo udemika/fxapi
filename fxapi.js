@@ -28,14 +28,14 @@ function component(object) {
 
         var urls = [];
 
-        // --- 1. Оригинальный fxapi на 146.103.111.209 (как было) ---
+        // --- 1) FXAPI по kinopoisk_id ---
         if (object.movie.kinopoisk_id) {
             var fxapi_base =
                 '?rjson=False' +
                 '&kinopoisk_id=' + object.movie.kinopoisk_id +
                 '&s=1';
 
-            // основной сервер
+            // как было (146.103.111.209 + showy_token)
             urls.push(
                 Defined.video_host + 'lite/fxapi' +
                 fxapi_base +
@@ -43,27 +43,19 @@ function component(object) {
                 '&showy_token=' + Defined.showy_token
             );
 
-            // fxapi на online3 / online7 с авторизацией skaz
+            // online3/online7 fxapi (skaz auth)
             var skaz_auth =
                 '&account_email=aklama%40mail.ru' +
                 '&uid=guest';
 
-            urls.push(
-                'http://online3.skaz.tv/lite/fxapi' +
-                fxapi_base +
-                skaz_auth
-            );
-
-            urls.push(
-                'http://online7.skaz.tv/lite/fxapi' +
-                fxapi_base +
-                skaz_auth
-            );
+            urls.push('http://online3.skaz.tv/lite/fxapi' + fxapi_base + skaz_auth);
+            urls.push('http://online7.skaz.tv/lite/fxapi' + fxapi_base + skaz_auth);
         }
 
-        // --- 2. Балансеры videocdn / filmix / ... по title ---
+        // --- 2) Балансеры по title ---
         if (object.movie.title) {
             var title = encodeURIComponent(object.movie.title);
+
             var skaz_auth2 =
                 '&account_email=aklama%40mail.ru' +
                 '&uid=guest';
@@ -84,11 +76,9 @@ function component(object) {
 
             hosts.forEach(function (host) {
                 balancers.forEach(function (b) {
-                    urls.push(
-                        host + b +
-                        '?title=' + title +
-                        skaz_auth2
-                    );
+                    // как в примере:
+                    // http://online3.skaz.tv/lite/videocdn?title=.....&account_email=...&uid=guest
+                    urls.push(host + b + '?title=' + title + skaz_auth2);
                 });
             });
         }
@@ -96,6 +86,18 @@ function component(object) {
         return urls;
     }
 
+    // Жёстко дописываем авторизацию ко всем ссылкам на online3/online7,
+    // чтобы переходы "фильм/сезоны" не требовали синхронизацию.
+    function appendAuth(url) {
+        if (!url) return url;
+
+        if (url.indexOf('account_email=') !== -1 && url.indexOf('uid=') !== -1) return url;
+
+        if (url.indexOf('online3.skaz.tv') === -1 && url.indexOf('online7.skaz.tv') === -1) return url;
+
+        var sep = url.indexOf('?') === -1 ? '?' : '&';
+        return url + sep + 'account_email=aklama%40mail.ru&uid=guest';
+    }
 
     function parseHtml(str) {
         var html = $('<div>' + str + '</div>');
@@ -107,6 +109,16 @@ function component(object) {
             if (!json) return;
 
             var data = JSON.parse(json);
+
+            // ВАЖНО: дописываем авторизацию прямо в url из data-json
+            data.url = appendAuth(data.url);
+
+            // Если вдруг quality содержит ссылки — тоже допишем авторизацию
+            if (data.quality && typeof data.quality === 'object') {
+                Object.keys(data.quality).forEach(function (q) {
+                    if (typeof data.quality[q] === 'string') data.quality[q] = appendAuth(data.quality[q]);
+                });
+            }
 
             data.title =
                 el.find('.videos__item-title').text() ||
@@ -205,7 +217,6 @@ function component(object) {
 
         next();
     }
-
 
     function empty() {
         scroll.clear();
