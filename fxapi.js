@@ -12,7 +12,7 @@
  Debug: подробные логи запросов в консоль.
 */
 
-try { console.log('[SHARA] script loaded (debug)'); } catch(e){}
+try { console.log('[SHARA] script loaded (Plugins.add API)'); } catch(e){}
 
 var Defined = {
     name: 'SHARA',
@@ -360,15 +360,15 @@ function component(object) {
 }
 
 function startPlugin() {
-    // КНОПКА / включение плагина — ровно как в исходном fxapi.js
     Lampa.Component.add('SHARA', component);
 
-    Lampa.Manifest.plugins = {
+    var manifest = {
         type: 'video',
+        version: '1.0.0',
         name: 'SHARA',
-        description: 'SHARA FXAPI FULL (debug)',
+        description: 'SHARA FXAPI FULL + online3/online4',
         component: 'SHARA',
-        onContextMenu: function () {
+        onContextMenu: function (object) {
             return {
                 name: 'Смотреть онлайн',
                 description: 'SHARA'
@@ -383,7 +383,10 @@ function startPlugin() {
         }
     };
 
-    try { console.log('[SHARA] plugin registered into Manifest.plugins (object assign)'); } catch(e){}
+    // Правильный способ регистрации кнопки в карточке через Lampa.Manifest (старый способ)
+    Lampa.Manifest.plugins = manifest;
+
+    try { console.log('[SHARA] registered via Manifest.plugins'); } catch(e){}
 }
 
 startPlugin();
