@@ -1,18 +1,13 @@
 (function () {
 'use strict';
 
-console.log('=== [SHARA] DIAGNOSTIC START ===');
-
 if (window.shara_plugin_loaded) {
-    console.log('[SHARA] already loaded, skip');
+    console.log('[SHARA] already loaded');
     return;
 }
 window.shara_plugin_loaded = true;
 
-console.log('[SHARA] 1. Script executing');
-console.log('[SHARA] 2. Lampa object:', typeof Lampa);
-console.log('[SHARA] 3. Lampa.Component:', typeof Lampa.Component);
-console.log('[SHARA] 4. Lampa.Manifest:', typeof Lampa.Manifest);
+console.log('[SHARA] init');
 
 var Defined = {
     name: 'SHARA',
@@ -165,7 +160,7 @@ function component(object) {
                 log('OK', url, 'len:', (str || '').length, 'preview:', (str || '').slice(0, 160));
                 if (push_history) history.push(url);
                 var videos = parseHtml(str, url);
-                log('Parsed items:', videos.length, 'from', url);
+                log('Parsed items:', videos.length);
                 if (videos.length) render(videos); else empty();
             },
             function (e) { err('ERROR', url, e); empty(); },
@@ -177,20 +172,19 @@ function component(object) {
         history = [];
         var urls = buildUrls();
         log('Movie:', object && object.movie ? { title: object.movie.title, kinopoisk_id: object.movie.kinopoisk_id } : object);
-        log('Queue size:', urls.length);
-        try { log('Queue:', urls); } catch (e) {}
+        log('Queue:', urls.length);
         if (!urls.length) return empty();
         var i = 0;
         function next() {
             var url = urls[i++];
             if (!url) return empty();
-            if (isForbidden(url)) { err('Blocked start url', url); return next(); }
+            if (isForbidden(url)) { err('Blocked', url); return next(); }
             log('TRY', url);
             network.native(url,
                 function (str) {
-                    log('OK', url, 'len:', (str || '').length, 'preview:', (str || '').slice(0, 160));
+                    log('OK', url, 'len:', (str || '').length);
                     var videos = parseHtml(str, url);
-                    log('Parsed items:', videos.length, 'from', url);
+                    log('Parsed:', videos.length);
                     if (videos.length) render(videos); else next();
                 },
                 function (e) { err('ERROR', url, e); next(); },
@@ -213,7 +207,7 @@ function component(object) {
                 Lampa.Controller.collectionFocus(last || false, scroll.render());
             },
             back: function () {
-                if (history.length) { var prev = history.pop(); requestUrl(prev, false); return; }
+                if (history.length) { requestUrl(history.pop(), false); return; }
                 Lampa.Activity.backward();
             }
         });
@@ -225,17 +219,15 @@ function component(object) {
 }
 
 function startPlugin() {
-    console.log('[SHARA] 5. startPlugin() called');
-
     Lampa.Component.add('SHARA', component);
-    console.log('[SHARA] 6. Component.add done');
 
-    console.log('[SHARA] 7. Before Manifest.plugins assignment, current value:', Lampa.Manifest.plugins);
-
-    Lampa.Manifest.plugins = {
+    // ПРАВИЛЬНО: добавляем в массив, а не перезатираем
+    if (!Lampa.Manifest.plugins) Lampa.Manifest.plugins = [];
+    
+    Lampa.Manifest.plugins.push({
         type: 'video',
         name: 'SHARA',
-        description: 'SHARA FXAPI FULL',
+        description: 'SHARA FXAPI + online3/online4',
         component: 'SHARA',
         onContextMenu: function () {
             return { name: 'Смотреть онлайн', description: 'SHARA' };
@@ -243,26 +235,15 @@ function startPlugin() {
         onContextLauch: function (object) {
             Lampa.Activity.push({ title: 'SHARA', component: 'SHARA', movie: object });
         }
-    };
-
-    console.log('[SHARA] 8. After Manifest.plugins assignment:', Lampa.Manifest.plugins);
-    console.log('=== [SHARA] REGISTRATION COMPLETE ===');
-    console.log('[SHARA] ДИАГНОСТИКА: Откройте карточку фильма и введите в консоли: Lampa.Manifest.plugins');
+    });
+    
+    console.log('[SHARA] registered, total plugins:', Lampa.Manifest.plugins.length);
 }
 
-console.log('[SHARA] 9. Checking appready:', window.appready);
-
-if (window.appready) {
-    console.log('[SHARA] 10. App ready, starting immediately');
-    startPlugin();
-} else {
-    console.log('[SHARA] 11. App not ready, waiting for event');
+if (window.appready) startPlugin();
+else {
     Lampa.Listener.follow('app', function (e) {
-        console.log('[SHARA] 12. App event:', e.type);
-        if (e.type === 'ready') {
-            console.log('[SHARA] 13. App ready event received');
-            startPlugin();
-        }
+        if (e.type === 'ready') startPlugin();
     });
 }
 
