@@ -5,17 +5,27 @@
  FULL SHARA FXAPI
  Сервер видео: 146.103.111.209
  kinopoisk_id берётся из Lampa
+
+ + SKAZ балансеры (online3/online4) по title:
+   /lite/<balancer>?title=...&account_email=...&uid=guest&lampac_unic_id=...
+   (запросы на /lite/events и /lite/withsearch блокируются)
 */
 
 var Defined = {
     name: 'SHARA',
+
+    // FXAPI сервер
     video_host: 'http://146.103.111.209/',
     uid: 'p8nqb9ii',
     showy_token: 'ik377033-90eb-4d76-93c9-7605952a096l'
 };
 
-// Данные гостевой авторизации для skaz
 var Skaz = {
+    hosts: [
+        'http://online3.skaz.tv/lite/',
+        'http://online4.skaz.tv/lite/'
+    ],
+    balancers: ['videocdn', 'filmix', 'kinopub', 'alloha', 'rhsprem', 'rezka'],
     account_email: 'aklama%40mail.ru',
     uid: 'guest',
     unic_id_key: 'lampac_unic_id'
@@ -29,6 +39,7 @@ function component(object) {
     var files = new Lampa.Explorer(object);
 
     var last;
+    var history = [];
 
     function getSkazUnicId() {
         var unic = Lampa.Storage.get(Skaz.unic_id_key);
@@ -39,11 +50,18 @@ function component(object) {
         return unic;
     }
 
+    function isForbidden(url) {
+        return !!(url && (
+            url.indexOf('/lite/events') !== -1 ||
+            url.indexOf('/lite/withsearch') !== -1
+        ));
+    }
+
     function isSkazUrl(url) {
-        return url && (
+        return !!(url && (
             url.indexOf('online3.skaz.tv') !== -1 ||
-            url.indexOf('online7.skaz.tv') !== -1
-        );
+            url.indexOf('online4.skaz.tv') !== -1
+        ));
     }
 
     function normalizeUrl(url, base_url) {
@@ -60,12 +78,12 @@ function component(object) {
         return origin + '/' + url;
     }
 
-    // Любой запрос к online3/online7 принудительно с account_email + uid=guest + lampac_unic_id
+    // Любой запрос к online3/online4 принудительно с account_email + uid=guest + lampac_unic_id
     function applySkazAuth(url) {
         if (!url) return url;
         if (!isSkazUrl(url)) return url;
 
-        // вычищаем прежние account_email/uid/lampac_unic_id
+        // вычищаем прежние account_email/uid/lampac_unic_id (и любые uid из сервера)
         url = url
             .replace(/([?&])(uid|account_email|lampac_unic_id)=[^&]*/g, '$1')
             .replace(/\?&/g, '?')
@@ -80,49 +98,26 @@ function component(object) {
     }
 
     function buildUrls() {
-        if (!object.movie) return [];
-
         var urls = [];
 
-        // 1) Оригинальный fxapi (как было)
-        if (object.movie.kinopoisk_id) {
-            var fxapi_base =
-                '?rjson=False' +
-                '&kinopoisk_id=' + object.movie.kinopoisk_id +
-                '&s=1';
-
+        // 1) FXAPI по kinopoisk_id (146.103.111.209)
+        if (object.movie && object.movie.kinopoisk_id) {
             urls.push(
                 Defined.video_host + 'lite/fxapi' +
-                fxapi_base +
+                '?rjson=False' +
+                '&kinopoisk_id=' + object.movie.kinopoisk_id +
+                '&s=1' +
                 '&uid=' + Defined.uid +
                 '&showy_token=' + Defined.showy_token
             );
-
-            // fxapi на online3/online7 (с принудительной auth)
-            urls.push(applySkazAuth('http://online3.skaz.tv/lite/fxapi' + fxapi_base));
-            urls.push(applySkazAuth('http://online7.skaz.tv/lite/fxapi' + fxapi_base));
         }
 
-        // 2) Балансеры по title (как в примере /lite/videocdn?title=...)
-        if (object.movie.title) {
+        // 2) SKAZ балансеры по title
+        if (object.movie && object.movie.title) {
             var title = encodeURIComponent(object.movie.title);
 
-            var hosts = [
-                'http://online3.skaz.tv/lite/',
-                'http://online7.skaz.tv/lite/'
-            ];
-
-            var balancers = [
-                'videocdn',
-                'filmix',
-                'kinopub',
-                'alloha',
-                'rhsprem',
-                'rezka'
-            ];
-
-            hosts.forEach(function (host) {
-                balancers.forEach(function (b) {
+            Skaz.hosts.forEach(function (host) {
+                Skaz.balancers.forEach(function (b) {
                     urls.push(applySkazAuth(host + b + '?title=' + title));
                 });
             });
@@ -142,13 +137,18 @@ function component(object) {
 
             var data = JSON.parse(json);
 
-            // принудительная auth для любых ссылок, которые ведут на online3/online7
-            data.url = applySkazAuth(normalizeUrl(data.url, base_url));
+            // нормализация url + принудительная auth для skaz
+            if (data.url) {
+                data.url = normalizeUrl(data.url, base_url);
+                data.url = applySkazAuth(data.url);
+            }
 
+            // иногда ссылки могут быть в quality
             if (data.quality && typeof data.quality === 'object') {
                 Object.keys(data.quality).forEach(function (q) {
                     if (typeof data.quality[q] === 'string') {
-                        data.quality[q] = applySkazAuth(normalizeUrl(data.quality[q], base_url));
+                        var qurl = normalizeUrl(data.quality[q], base_url);
+                        data.quality[q] = applySkazAuth(qurl);
                     }
                 });
             }
@@ -156,10 +156,11 @@ function component(object) {
             data.title =
                 el.find('.videos__item-title').text() ||
                 data.translate ||
+                data.title ||
                 'Видео';
 
-            data.voice_name = data.translate || data.title;
-            data.method = 'play';
+            data.voice_name = data.translate || data.voice_name || data.title;
+            if (!data.method) data.method = 'play';
 
             if (data.quality) {
                 data.qualitys = data.quality;
@@ -185,11 +186,11 @@ function component(object) {
     }
 
     function saveWatched(item) {
-        var key = Lampa.Utils.hash(object.movie.kinopoisk_id);
+        var key = Lampa.Utils.hash((object.movie && object.movie.kinopoisk_id) || (object.movie && object.movie.title) || 'shara');
         var watched = Lampa.Storage.get('shara_watched', {});
 
         watched[key] = {
-            title: object.movie.title,
+            title: object.movie ? object.movie.title : '',
             voice: item.voice_name,
             time: Date.now()
         };
@@ -204,12 +205,25 @@ function component(object) {
             var html = Lampa.Template.get('lampac_prestige_full', {
                 title: item.title,
                 time: '',
-                info: item.voice_name,
+                info: item.voice_name || '',
                 quality: item.quality || ''
             });
 
             html.on('hover:enter', function () {
-                play(item);
+                if (!item.url) return;
+
+                // блокируем нежелательные эндпоинты
+                if (isForbidden(item.url)) {
+                    empty();
+                    return;
+                }
+
+                if (item.method === 'link') {
+                    requestUrl(item.url, true);
+                }
+                else {
+                    play(item);
+                }
             });
 
             html.on('hover:focus', function (e) {
@@ -223,15 +237,41 @@ function component(object) {
         Lampa.Controller.enable('content');
     }
 
+    function requestUrl(url, push_history) {
+        if (!url) return;
+
+        url = applySkazAuth(url);
+        if (isForbidden(url)) return empty();
+
+        network.native(
+            url,
+            function (str) {
+                if (push_history) history.push(url);
+
+                var videos = parseHtml(str, url);
+                if (videos.length) render(videos);
+                else empty();
+            },
+            empty,
+            false,
+            { dataType: 'text' }
+        );
+    }
+
     function request() {
+        history = [];
+
         var urls = buildUrls();
-        if (!urls.length) return;
+        if (!urls.length) return empty();
 
         var i = 0;
 
         function next() {
             var url = urls[i++];
             if (!url) return empty();
+
+            // на всякий случай: блокируем /events и /withsearch
+            if (isForbidden(url)) return next();
 
             network.native(
                 url,
@@ -265,6 +305,13 @@ function component(object) {
                 Lampa.Controller.collectionFocus(last || false, scroll.render());
             },
             back: function () {
+                if (history.length) {
+                    var prev = history.pop();
+                    // вернуться на предыдущую страницу, не добавляя в историю
+                    requestUrl(prev, false);
+                    return;
+                }
+
                 Lampa.Activity.backward();
             }
         });
