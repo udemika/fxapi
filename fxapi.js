@@ -14,6 +14,13 @@ var Defined = {
     showy_token: 'ik377033-90eb-4d76-93c9-7605952a096l'
 };
 
+// Данные гостевой авторизации для skaz
+var Skaz = {
+    account_email: 'aklama%40mail.ru',
+    uid: 'guest',
+    unic_id_key: 'lampac_unic_id'
+};
+
 var Network = Lampa.Reguest;
 
 function component(object) {
@@ -23,66 +30,14 @@ function component(object) {
 
     var last;
 
-    function buildUrls() {
-        if (!object.movie) return [];
-
-        var urls = [];
-
-        // FXAPI по kinopoisk_id
-        if (object.movie.kinopoisk_id) {
-            var fxapi_base =
-                '?rjson=False' +
-                '&kinopoisk_id=' + object.movie.kinopoisk_id +
-                '&s=1';
-
-            // как было (146.103.111.209 + showy_token)
-            urls.push(
-                Defined.video_host + 'lite/fxapi' +
-                fxapi_base +
-                '&uid=' + Defined.uid +
-                '&showy_token=' + Defined.showy_token
-            );
-
-            // online3/online7 fxapi (skaz auth)
-            var skaz_auth =
-                '&account_email=aklama%40mail.ru' +
-                '&uid=guest';
-
-            urls.push('http://online3.skaz.tv/lite/fxapi' + fxapi_base + skaz_auth);
-            urls.push('http://online7.skaz.tv/lite/fxapi' + fxapi_base + skaz_auth);
+    function getSkazUnicId() {
+        var unic = Lampa.Storage.get(Skaz.unic_id_key);
+        if (!unic) {
+            unic = Math.random().toString(36).slice(2, 10);
+            Lampa.Storage.set(Skaz.unic_id_key, unic);
         }
-
-        // Балансеры по title
-        if (object.movie.title) {
-            var title = encodeURIComponent(object.movie.title);
-            var skaz_auth2 =
-                '&account_email=aklama%40mail.ru' +
-                '&uid=guest';
-
-            var hosts = [
-                'http://online3.skaz.tv/lite/',
-                'http://online7.skaz.tv/lite/'
-            ];
-
-            var balancers = [
-                'videocdn',
-                'filmix',
-                'kinopub',
-                'alloha',
-                'rhsprem',
-                'rezka'
-            ];
-
-            hosts.forEach(function (host) {
-                balancers.forEach(function (b) {
-                    urls.push(host + b + '?title=' + title + skaz_auth2);
-                });
-            });
-        }
-
-        return urls;
+        return unic;
     }
-
 
     function isSkazUrl(url) {
         return url && (
@@ -105,19 +60,75 @@ function component(object) {
         return origin + '/' + url;
     }
 
+    // Любой запрос к online3/online7 принудительно с account_email + uid=guest + lampac_unic_id
     function applySkazAuth(url) {
         if (!url) return url;
         if (!isSkazUrl(url)) return url;
 
-        // убрать старые account_email/uid, чтобы всегда было uid=guest
+        // вычищаем прежние account_email/uid/lampac_unic_id
         url = url
-            .replace(/([?&])(uid|account_email)=[^&]*/g, '$1')
+            .replace(/([?&])(uid|account_email|lampac_unic_id)=[^&]*/g, '$1')
             .replace(/\?&/g, '?')
             .replace(/&&/g, '&')
             .replace(/[?&]$/g, '');
 
         var sep = url.indexOf('?') === -1 ? '?' : '&';
-        return url + sep + 'account_email=aklama%40mail.ru&uid=guest';
+        return url + sep +
+            'account_email=' + Skaz.account_email +
+            '&uid=' + Skaz.uid +
+            '&lampac_unic_id=' + getSkazUnicId();
+    }
+
+    function buildUrls() {
+        if (!object.movie) return [];
+
+        var urls = [];
+
+        // 1) Оригинальный fxapi (как было)
+        if (object.movie.kinopoisk_id) {
+            var fxapi_base =
+                '?rjson=False' +
+                '&kinopoisk_id=' + object.movie.kinopoisk_id +
+                '&s=1';
+
+            urls.push(
+                Defined.video_host + 'lite/fxapi' +
+                fxapi_base +
+                '&uid=' + Defined.uid +
+                '&showy_token=' + Defined.showy_token
+            );
+
+            // fxapi на online3/online7 (с принудительной auth)
+            urls.push(applySkazAuth('http://online3.skaz.tv/lite/fxapi' + fxapi_base));
+            urls.push(applySkazAuth('http://online7.skaz.tv/lite/fxapi' + fxapi_base));
+        }
+
+        // 2) Балансеры по title (как в примере /lite/videocdn?title=...)
+        if (object.movie.title) {
+            var title = encodeURIComponent(object.movie.title);
+
+            var hosts = [
+                'http://online3.skaz.tv/lite/',
+                'http://online7.skaz.tv/lite/'
+            ];
+
+            var balancers = [
+                'videocdn',
+                'filmix',
+                'kinopub',
+                'alloha',
+                'rhsprem',
+                'rezka'
+            ];
+
+            hosts.forEach(function (host) {
+                balancers.forEach(function (b) {
+                    urls.push(applySkazAuth(host + b + '?title=' + title));
+                });
+            });
+        }
+
+        return urls;
     }
 
     function parseHtml(str, base_url) {
@@ -131,6 +142,7 @@ function component(object) {
 
             var data = JSON.parse(json);
 
+            // принудительная auth для любых ссылок, которые ведут на online3/online7
             data.url = applySkazAuth(normalizeUrl(data.url, base_url));
 
             if (data.quality && typeof data.quality === 'object') {
