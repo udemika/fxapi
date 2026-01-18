@@ -12,6 +12,8 @@
  Debug: подробные логи запросов в консоль.
 */
 
+try { console.log('[SHARA] script loaded (debug build)'); } catch(e){}
+
 var Defined = {
     name: 'SHARA',
 
@@ -43,17 +45,11 @@ function component(object) {
     var history = [];
 
     function log() {
-        try {
-            console.log.apply(console, ['[SHARA]'].concat([].slice.call(arguments)));
-        }
-        catch (e) {}
+        try { console.log.apply(console, ['[SHARA]'].concat([].slice.call(arguments))); } catch (e) {}
     }
 
     function err() {
-        try {
-            console.error.apply(console, ['[SHARA]'].concat([].slice.call(arguments)));
-        }
-        catch (e) {}
+        try { console.error.apply(console, ['[SHARA]'].concat([].slice.call(arguments))); } catch (e) {}
     }
 
     function getSkazUnicId() {
@@ -63,13 +59,6 @@ function component(object) {
             Lampa.Storage.set(Skaz.unic_id_key, unic);
         }
         return unic;
-    }
-
-    function isForbidden(url) {
-        return !!(url && (
-            url.indexOf('/lite/events') !== -1 ||
-            url.indexOf('/lite/withsearch') !== -1
-        ));
     }
 
     function isSkazUrl(url) {
@@ -93,7 +82,6 @@ function component(object) {
         return origin + '/' + url;
     }
 
-    // Любой запрос к online3/online4 принудительно с account_email + uid=guest + lampac_unic_id
     function applySkazAuth(url) {
         if (!url) return url;
         if (!isSkazUrl(url)) return url;
@@ -151,11 +139,9 @@ function component(object) {
             if (!json) return;
 
             var data;
-
             try {
                 data = JSON.parse(json);
-            }
-            catch (e) {
+            } catch (e) {
                 err('JSON.parse error', e, 'json preview:', (json || '').slice(0, 200));
                 return;
             }
@@ -235,18 +221,8 @@ function component(object) {
             html.on('hover:enter', function () {
                 if (!item.url) return;
 
-                if (isForbidden(item.url)) {
-                    err('Blocked url', item.url);
-                    empty();
-                    return;
-                }
-
-                if (item.method === 'link') {
-                    requestUrl(item.url, true);
-                }
-                else {
-                    play(item);
-                }
+                if (item.method === 'link') requestUrl(item.url, true);
+                else play(item);
             });
 
             html.on('hover:focus', function (e) {
@@ -265,17 +241,12 @@ function component(object) {
 
         url = applySkazAuth(url);
 
-        if (isForbidden(url)) {
-            err('Blocked requestUrl', url);
-            return empty();
-        }
-
         log('GET', url);
 
         network.native(
             url,
             function (str) {
-                log('OK', url, 'len:', (str || '').length, 'preview:', (str || '').slice(0, 140));
+                log('OK', url, 'len:', (str || '').length, 'preview:', (str || '').slice(0, 160));
 
                 if (push_history) history.push(url);
 
@@ -285,8 +256,8 @@ function component(object) {
                 if (videos.length) render(videos);
                 else empty();
             },
-            function (e) {
-                err('ERROR', url, e);
+            function () {
+                err('ERROR', url, 'network/native error');
                 empty();
             },
             false,
@@ -310,17 +281,12 @@ function component(object) {
             var url = urls[i++];
             if (!url) return empty();
 
-            if (isForbidden(url)) {
-                err('Blocked start url', url);
-                return next();
-            }
-
             log('TRY', url);
 
             network.native(
                 url,
                 function (str) {
-                    log('OK', url, 'len:', (str || '').length, 'preview:', (str || '').slice(0, 140));
+                    log('OK', url, 'len:', (str || '').length, 'preview:', (str || '').slice(0, 160));
 
                     var videos = parseHtml(str, url);
                     log('Parsed items:', videos.length, 'from', url);
@@ -328,8 +294,8 @@ function component(object) {
                     if (videos.length) render(videos);
                     else next();
                 },
-                function (e) {
-                    err('ERROR', url, e);
+                function () {
+                    err('ERROR', url, 'network/native error');
                     next();
                 },
                 false,
@@ -379,6 +345,8 @@ function component(object) {
 }
 
 function startPlugin() {
+    try { console.log('[SHARA] register plugin'); } catch(e){}
+
     Lampa.Component.add('SHARA', component);
 
     Lampa.Manifest.plugins = {
