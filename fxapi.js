@@ -1,13 +1,13 @@
 (function () {
 'use strict';
 
-if (window.shara_plugin_loaded) {
+if (window.shara_balancer_loaded) {
     console.log('[SHARA] already loaded');
     return;
 }
-window.shara_plugin_loaded = true;
+window.shara_balancer_loaded = true;
 
-console.log('[SHARA] init');
+console.log('[SHARA] init balancer');
 
 var Defined = {
     name: 'SHARA',
@@ -27,10 +27,8 @@ var Skaz = {
     unic_id_key: 'lampac_unic_id'
 };
 
-var Network = Lampa.Reguest;
-
 function component(object) {
-    var network = new Network();
+    var network = new Lampa.Reguest();
     var scroll = new Lampa.Scroll({ mask: true, over: true });
     var files = new Lampa.Explorer(object);
     var last, history = [];
@@ -102,7 +100,7 @@ function component(object) {
             if (!json) return;
             var data;
             try { data = JSON.parse(json); }
-            catch (e) { err('JSON.parse error', e, 'json:', (json || '').slice(0, 200)); return; }
+            catch (e) { err('JSON.parse error', e); return; }
             if (data.url) {
                 data.url = normalizeUrl(data.url, base_url);
                 data.url = applySkazAuth(data.url);
@@ -110,8 +108,7 @@ function component(object) {
             if (data.quality && typeof data.quality === 'object') {
                 Object.keys(data.quality).forEach(function (q) {
                     if (typeof data.quality[q] === 'string') {
-                        var qurl = normalizeUrl(data.quality[q], base_url);
-                        data.quality[q] = applySkazAuth(qurl);
+                        data.quality[q] = applySkazAuth(normalizeUrl(data.quality[q], base_url));
                     }
                 });
             }
@@ -128,7 +125,7 @@ function component(object) {
     }
 
     function play(item) {
-        log('Play', item.title, item.url);
+        log('Play', item.title);
         Lampa.Player.play({ title: item.title, url: item.url, quality: item.qualitys, voice_name: item.voice_name, isonline: true });
     }
 
@@ -140,7 +137,7 @@ function component(object) {
             });
             html.on('hover:enter', function () {
                 if (!item.url) return;
-                if (isForbidden(item.url)) { err('Blocked url', item.url); empty(); return; }
+                if (isForbidden(item.url)) { err('Blocked', item.url); empty(); return; }
                 if (item.method === 'link') requestUrl(item.url, true);
                 else play(item);
             });
@@ -153,14 +150,14 @@ function component(object) {
     function requestUrl(url, push_history) {
         if (!url) return;
         url = applySkazAuth(url);
-        if (isForbidden(url)) { err('Blocked requestUrl', url); return empty(); }
+        if (isForbidden(url)) { err('Blocked', url); return empty(); }
         log('GET', url);
         network.native(url,
             function (str) {
-                log('OK', url, 'len:', (str || '').length, 'preview:', (str || '').slice(0, 160));
+                log('OK', 'len:', (str || '').length);
                 if (push_history) history.push(url);
                 var videos = parseHtml(str, url);
-                log('Parsed items:', videos.length);
+                log('Parsed:', videos.length);
                 if (videos.length) render(videos); else empty();
             },
             function (e) { err('ERROR', url, e); empty(); },
@@ -171,7 +168,7 @@ function component(object) {
     function request() {
         history = [];
         var urls = buildUrls();
-        log('Movie:', object && object.movie ? { title: object.movie.title, kinopoisk_id: object.movie.kinopoisk_id } : object);
+        log('Movie:', object.movie ? object.movie.title : '?');
         log('Queue:', urls.length);
         if (!urls.length) return empty();
         var i = 0;
@@ -182,7 +179,7 @@ function component(object) {
             log('TRY', url);
             network.native(url,
                 function (str) {
-                    log('OK', url, 'len:', (str || '').length);
+                    log('OK', 'len:', (str || '').length);
                     var videos = parseHtml(str, url);
                     log('Parsed:', videos.length);
                     if (videos.length) render(videos); else next();
@@ -219,25 +216,27 @@ function component(object) {
 }
 
 function startPlugin() {
-    Lampa.Component.add('SHARA', component);
+    // Регистрация компонента
+    Lampa.Component.add('online_shara', component);
 
-    // ПРАВИЛЬНО: добавляем в массив, а не перезатираем
-    if (!Lampa.Manifest.plugins) Lampa.Manifest.plugins = [];
-    
-    Lampa.Manifest.plugins.push({
-        type: 'video',
-        name: 'SHARA',
-        description: 'SHARA FXAPI + online3/online4',
-        component: 'SHARA',
-        onContextMenu: function () {
-            return { name: 'Смотреть онлайн', description: 'SHARA' };
-        },
-        onContextLauch: function (object) {
-            Lampa.Activity.push({ title: 'SHARA', component: 'SHARA', movie: object });
-        }
-    });
-    
-    console.log('[SHARA] registered, total plugins:', Lampa.Manifest.plugins.length);
+    // Регистрация онлайн-балансера для шторки
+    var balancer = {
+        name: 'shara',
+        title: 'SHARA',
+        component: 'online_shara'
+    };
+
+    // Добавляем в список онлайн-балансеров
+    if (Lampa.Storage) {
+        Lampa.Storage.set('online_choice_shara', '{}');
+    }
+
+    // Регистрация через Embed если есть
+    if (Lampa.Platform && Lampa.Platform.tv()) {
+        Lampa.Embed && Lampa.Embed.add(balancer);
+    }
+
+    console.log('[SHARA] registered as online balancer');
 }
 
 if (window.appready) startPlugin();
